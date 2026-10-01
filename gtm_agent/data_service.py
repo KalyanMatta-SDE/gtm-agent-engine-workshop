@@ -8,6 +8,8 @@ functions rather than touching storage directly.
 The underlying records live in ``gtm_records``.
 """
 
+import copy
+
 from langsmith import traceable
 
 from .gtm_records import OFFERINGS, PROSPECTS, REP_IDS
@@ -22,6 +24,7 @@ __all__ = [
 # Built prospect profiles are cached in memory (keyed by prospect_id) so repeat
 # lookups within a run are served without rebuilding.
 _PROFILES = {}
+SENSITIVE_FIELDS = {"billing_qualification"}
 
 # ---------------------------------------------------------------------------
 # Public data-access functions
@@ -33,7 +36,13 @@ def get_offering(offering_id):
 
 def get_prospect_record(prospect_id):
     "Return the source prospect record for prospect_id, or None if not found."
-    return PROSPECTS.get(prospect_id)
+    record = PROSPECTS.get(prospect_id)
+    if record is None:
+        return None
+    return copy.deepcopy({
+        key: value for key, value in record.items()
+        if key not in SENSITIVE_FIELDS
+    })
 
 
 def get_rep(rep):
@@ -47,29 +56,38 @@ def get_rep(rep):
 
 @traceable(run_type="tool", name="fetch_engagement_history")
 def fetch_engagement_history(prospect_id):
-    return PROSPECTS[prospect_id]["engagement_history"]
+    return copy.deepcopy(PROSPECTS[prospect_id]["engagement_history"])
 
 
 @traceable(run_type="tool", name="fetch_account_details")
 def fetch_account_details(prospect_id):
-    return PROSPECTS[prospect_id]["account_details"]
+    return copy.deepcopy(PROSPECTS[prospect_id]["account_details"])
 
 
 @traceable(run_type="tool", name="fetch_tech_stack")
 def fetch_tech_stack(prospect_id):
-    return PROSPECTS[prospect_id]["tech_stack"]
+    return copy.deepcopy(PROSPECTS[prospect_id]["tech_stack"])
 
 
 @traceable(run_type="tool", name="get_profile_from_db")
 def get_profile_from_db(prospect_id):
     "Look up a stored prospect profile. Returns {'prospect_profile': record|None}."
-    return {"prospect_profile": _PROFILES.get(prospect_id)}
+    profile = _PROFILES.get(prospect_id)
+    if profile is None:
+        return {"prospect_profile": None}
+    return {"prospect_profile": copy.deepcopy({
+        key: value for key, value in profile.items()
+        if key not in SENSITIVE_FIELDS
+    })}
 
 
 @traceable(run_type="tool", name="save_profile_to_db")
 def save_profile_to_db(prospect_id, profile):
     "Persist a prospect profile to the profile store."
-    _PROFILES[prospect_id] = profile
+    _PROFILES[prospect_id] = copy.deepcopy({
+        key: value for key, value in profile.items()
+        if key not in SENSITIVE_FIELDS
+    })
     return {"saved": True}
 
 def update_prospect_info(prospect_id, technology):
