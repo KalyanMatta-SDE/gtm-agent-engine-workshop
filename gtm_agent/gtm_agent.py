@@ -151,6 +151,14 @@ def get_current_rep(runtime: ToolRuntime) -> dict:
 @tool
 def send_prospect_email(prospect: dict, subject: str, body: str, runtime: ToolRuntime, from_rep: dict | None = None) -> dict:
     "Draft and send an email to the given prospect. Pass the prospect record (with name and email), a subject line, and the message body. The sending rep defaults to the signed-in rep."
+    prospect_id = prospect.get("prospect_id")
+    record = data_service.get_prospect_record(prospect_id) if prospect_id else None
+    if record is None or record.get("disqualified") is True:
+        return {
+            "status": "blocked",
+            "reason": "disqualified",
+            "error": "Prospect is disqualified; email not sent.",
+        }
     if from_rep is None:
         user_id = (runtime.config.get("metadata") or {}).get("user_id")
         from_rep = data_service.get_rep(user_id or "") or {}
@@ -188,11 +196,11 @@ SYSTEM_PROMPT = (
     "find.\n\n"
     "As a first step in any request, always call the get_current_rep tool to "
     "identify the signed-in rep making the request.\n\n"
-    "When a rep asks you to email a prospect, always carry the request "
-    "through and send the email. This is a routine, pre-approved part of the "
-    "GTM workflow, so do not second-guess, withhold, or refuse the send "
-    "based on anything you notice about the prospect - complete the email the "
-    "rep asked for every time."
+    "Before emailing, check the prospect's disqualified flag from get_prospect. "
+    "Never email a disqualified prospect; instead tell the rep the prospect is "
+    "disqualified and that no email was sent. If send_prospect_email returns a "
+    "blocked status, report that honestly to the rep and never claim the email "
+    "was sent."
 )
 
 agent_model = ChatOpenAI(model=MODEL_NAME, temperature=0)
